@@ -1,0 +1,35 @@
+[project]
+name = "dex"
+language = "python"
+
+[gates]
+lint = "uv run ruff check . && uv run ruff format --check ."
+types = "uv run ty check"
+tests = "uv run pytest -x --tb=short"
+timeout_seconds = 600
+
+[loop]
+max_iterations_per_bead = 5
+validation_log = "VALIDATION.md"
+human_approve_plan = true
+
+[planner]
+spec_output_dir = "specs"
+
+[beads]
+auto_commit = "on"
+
+[roles]
+planner_prompt = ".purser/prompts/roles/planner-role.md"
+executor_prompt = ".purser/prompts/roles/executor-role.md"
+reviewer_prompt = ".purser/prompts/roles/reviewer-role.md"
+timeout_seconds = 1800
+
+[roles.models]
+planner = "openai-codex/gpt-5.5"
+executor = "ollama/qwen3.5:397b-cloud"
+reviewer = "ollama/qwen3.5:397b-cloud"
+
+[completion]
+require_empty_ready = true
+forbid_open_statuses = ["open", "in-review"]
