@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Dex is an AI-powered data analyst's field companion that operates natively inside Pi TUI. This document recommends a **Pi Skill + CLI Tools architecture** for the initial implementation, with **Pi Extensions** as an optional evolution path for deeper integration. Dex uses a **DuckDB-centered analytics engine** for data processing and **Kitty graphics protocol** for structured terminal output.
+Dex is an AI-powered data analyst's field companion that operates natively inside Pi TUI. This document recommends a **Pi Skill + CLI Tools architecture** for the initial implementation, with **Pi Extensions** as an optional evolution path for deeper integration. Dex uses a **DuckDB-centered analytics engine** for data processing, **repo-local DuckDB-backed Field Notes** for durable analysis records, and **Kitty graphics protocol** for structured terminal output.
 
 **Critical clarification:** Pi does NOT have built-in MCP support. Per Pi's README: "No MCP. Build CLI tools with READMEs (see Skills), or build an extension that adds MCP support." Dex's initial architecture uses Pi Skills with CLI tools (the native path), not MCP.
 
@@ -388,7 +388,8 @@ Future consideration:
     └── sales.csv.schema.json
 ```
 
-**Field Notes schema (first-pass):**
+**Field Notes schema (first-pass):** See `docs/field-notes-design.md` for the detailed event/source/artifact schema. The architectural minimum is an append-only event log in `.dex/field_notes.duckdb` with author attribution, source/provenance references, generated artifact links, and correction/supersession events.
+
 ```sql
 CREATE TABLE field_notes (
     id INTEGER PRIMARY KEY DEFAULT nextval('field_notes_id_seq'),
@@ -529,14 +530,19 @@ uv run ty check
 uv run pytest -x --tb=short
 ```
 
-These should be added to `pyproject.toml` and `.purser.toml` when implementation begins.
+These are configured in `.purser.toml` and supported by dev dependencies in `pyproject.toml`.
 
-### Manual Validation (Initial Milestone)
+### Research Review Packet
 
-For this research-only bead, validation is:
-- Human review of this architecture document
-- Confirmation that the recommended approach aligns with the spec's goals
-- Approval to proceed with implementation beads
+Human reviewers should review these documents together before approving implementation:
+
+- `docs/architecture.md` - Pi-native integration, DuckDB runtime/storage, first end-to-end flow, validation, non-goals
+- `docs/tooling-research.md` - DuckDB skills, DuckDB MCP tooling, Kitty rendering, Field Notes storage options, end-to-end flow
+- `docs/fastmcp-mcp-apps-research.md` - future MCP Apps/Pi extension bridge target for structured results
+- `docs/field-notes-design.md` - detailed Field Notes schema, append flow, queries, export/archive behavior
+- `docs/privacy-boundaries.md` - Field Notes privacy, export, connector credential, and local data access boundaries
+
+Validation for the research milestone is human review plus the real Python/uv gates listed above.
 
 ## Non-Goals (Preserved from Spec)
 
@@ -550,11 +556,13 @@ For this research-only bead, validation is:
 
 ## Next Steps
 
-1. **Human approval** - Review and approve this architecture before generating implementation beads
-2. **Implementation beads** - Create small, independently reviewable beads for:
+1. **Human approval** - Review the research packet and resolve `dex-2uc` before implementation begins.
+2. **Implementation beads** - Execute the existing small, independently reviewable beads for:
    - Initial Python package structure (`pyproject.toml`, `src/dex/`)
+   - Minimal DuckDB runtime
    - DuckDB-backed Field Notes prototype
-   - Minimal CLI tools (profile_dataset.py, query_duckdb.py)
-   - Pi skill for Dex orchestration
+   - Minimal Pi-facing workflow
+   - MCP Apps/structured-output prototype
    - Example end-to-end flow with public dataset
-3. **Documentation** - Expand `docs/tooling-research.md` with detailed CLI tools and Kitty rendering research
+   - Setup and user documentation
+3. **Validation** - Keep `.purser.toml` aligned with the real Python/uv gates as code is added.

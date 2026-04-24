@@ -725,7 +725,7 @@ CREATE INDEX field_notes_dataset_idx ON field_notes(dataset_path);
 | **Structured Output** | CLI Tools + Kitty | Native Pi path, no extension required, Kitty escape sequences work directly |
 | **DuckDB** | DuckDB Python package | Direct control, no C++ extension complexity, Field Notes support |
 | **Chart Rendering** | kitcat (matplotlib backend) | Mature, Kitty protocol support, works over SSH |
-| **Field Notes Storage** | Repo-local `.dex/` | Project-specific, easy to archive, clear ownership |
+| **Field Notes Storage** | Repo-local `.dex/field_notes.duckdb` | Project-specific, easy to archive, clear ownership; see `docs/field-notes-design.md` and `docs/privacy-boundaries.md` |
 
 ### Official DuckDB Skills Status
 
@@ -750,11 +750,20 @@ If deeper integration is needed:
 
 **This is NOT part of the initial milestone.**
 
-### Next Steps
+### Review Packet and Next Steps
 
-1. **Human approval** - Review this research and `docs/architecture.md`
-2. **Package structure** - Create `src/dex/` with `pyproject.toml`
-3. **Field Notes prototype** - Implement DuckDB schema and append-only behavior
-4. **CLI tools** - Build minimal tools (`profile_dataset.py`, `query_duckdb.py`)
-5. **Pi skill** - Create `SKILL.md` with orchestration scripts
-6. **End-to-end example** - Test with public dataset (e.g., NYC taxi data, Kaggle sample)
+Human reviewers should review this document together with:
+
+- `docs/architecture.md` for the consolidated Pi-native and DuckDB-centered architecture
+- `docs/fastmcp-mcp-apps-research.md` for the future MCP Apps/Pi extension bridge path
+- `docs/field-notes-design.md` for the Field Notes schema and append-only archival design
+- `docs/privacy-boundaries.md` for export, credential, and local data access boundaries
+
+Then:
+
+1. **Human approval** - Resolve `dex-2uc` before implementation begins.
+2. **Package structure** - Create `src/dex/` under the existing uv/Python validation gates.
+3. **Field Notes prototype** - Implement DuckDB schema and append-only behavior.
+4. **CLI tools** - Build minimal tools (`profile_dataset.py`, `query_duckdb.py`).
+5. **Pi skill** - Create `SKILL.md` with orchestration scripts.
+6. **End-to-end example** - Test with public data while preserving the non-goals and privacy boundaries.
