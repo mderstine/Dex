@@ -82,3 +82,16 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+<!-- purser:agents begin -->
+## Purser workflow
+
+Purser is the planning / execution / review framework used in this repo.
+
+- Purser is workflow tooling, not this repo's product or primary deliverable unless explicitly requested.
+- The actual goal is to advance the repo's real work; specs should describe product/repo work, not Purser development work, unless explicitly requested.
+- Use repo-local embedded Beads only; do not switch this repo to shared, server, or global Beads modes.
+- Planning requires human/director approval before bead generation. Do not run `purser planner-plan` until the spec/planning approach has been reviewed and explicitly approved.
+- Normal flow is: `purser planner-intake-spec ... --synthesize false`, human review/refinement, `purser approve-plan ...` if available in your environment, then `purser planner-plan ...`, then execution/review.
+- Run Purser through Pi as the first-class host when using agent workflows.
+<!-- purser:agents end -->

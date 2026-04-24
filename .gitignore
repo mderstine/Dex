@@ -9,6 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
+# Local orchestration/runtime state
+.beads/
+.purser/
+.purser.toml
+VALIDATION.md
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
