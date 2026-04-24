@@ -2,60 +2,56 @@
 
 ## Executive Summary
 
-Dex is an AI-powered data analyst's field companion that operates natively inside Pi TUI. This document recommends a **hybrid integration architecture** combining **Pi skills** for workflow orchestration, **FastMCP MCP Apps** for structured terminal output, and a **DuckDB-centered analytics engine** for data processing.
+Dex is an AI-powered data analyst's field companion that operates natively inside Pi TUI. This document recommends a **Pi Skill + CLI Tools architecture** for the initial implementation, with **Pi Extensions** as an optional evolution path for deeper integration. Dex uses a **DuckDB-centered analytics engine** for data processing and **Kitty graphics protocol** for structured terminal output.
+
+**Critical clarification:** Pi does NOT have built-in MCP support. Per Pi's README: "No MCP. Build CLI tools with READMEs (see Skills), or build an extension that adds MCP support." Dex's initial architecture uses Pi Skills with CLI tools (the native path), not MCP.
 
 ## Recommended Architecture
 
-### Primary Integration Point: Pi Skills + FastMCP MCP Apps
+### Primary Integration Point: Pi Skill + CLI Tools
 
-**Recommendation:** Dex should integrate with Pi through a **Pi skill** that orchestrates analysis workflows, combined with **FastMCP MCP Apps** for returning structured results (tables, charts, summaries) to the terminal.
+**Recommendation:** Dex should integrate with Pi through a **Pi skill** that orchestrates analysis workflows. The skill invokes **CLI tools** (Python scripts) for DuckDB operations and structured output. For rich terminal graphics, CLI tools emit **Kitty graphics protocol** escape sequences directly.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Pi TUI                                 │
-│  ┌─────────────────┐         ┌─────────────────────────────┐   │
-│  │   Dex Skill     │         │   FastMCP MCP App Server    │   │
-│  │  (orchestration │◄───────►│   (structured output)       │   │
-│  │   & workflow)   │         │   - tables                  │   │
-│  └────────┬────────┘         │   - charts (Kitty protocol) │   │
-│           │                  │   - field notes             │   │
-│           │                  └──────────────┬──────────────┘   │
-│           │                                 │                   │
-└───────────┼─────────────────────────────────┼───────────────────┘
-            │                                 │
-            ▼                                 ▼
-┌────────────────────────┐         ┌─────────────────────────────┐
-│   DuckDB Python         │         │   Kitty Terminal           │
-│   (analytics engine)    │         │   (rich graphics via       │
-│   - local queries       │         │    graphics protocol)      │
-│   - connectors          │         └─────────────────────────────┘
-│   - field notes store   │
-└────────────────────────┘
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              Dex Pi Skill                               │   │
+│  │  (orchestration via SKILL.md + CLI tools)               │   │
+│  │  - /skill:dex command                                   │   │
+│  │  - Helper scripts invoke DuckDB operations              │   │
+│  │  - CLI tools emit Kitty escape sequences for charts     │   │
+│  └────────────────────────┬────────────────────────────────┘   │
+│                           │                                     │
+└───────────────────────────┼─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│   Dex CLI Tools (Python)                                        │
+│   - duckdb_runtime.py: DuckDB queries, profiling               │
+│   - field_notes.py: Append-only activity log                   │
+│   - chart_render.py: Matplotlib + kitcat for Kitty graphics    │
+│   - All tools output structured text + Kitty escape sequences  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why This Integration Point Is Appropriate
 
-A Pi skill is the optimal integration point for Dex because:
+A Pi skill with CLI tools is the optimal integration point for Dex because:
 
-1. **Progressive disclosure matches data analysis workflows** - Skills load on-demand via `/skill:dex` or natural language triggers, keeping Pi's context lean until analysis is needed. Data analysis is inherently bursty: users ask questions, get results, then pause to interpret. Skills align with this rhythm.
+1. **Native Pi support** - Skills are first-class Pi capabilities. No extension development required. CLI tools are explicitly endorsed by Pi: "Build CLI tools with READMEs (see Skills)."
 
-2. **Natural language entry point** - Users can invoke Dex through `/skill:dex` commands or by asking analytical questions that trigger the skill's description match. This feels like consulting a field companion, not running a tool.
+2. **Progressive disclosure matches data analysis workflows** - Skills load on-demand via `/skill:dex` or natural language triggers, keeping Pi's context lean until analysis is needed. Data analysis is inherently bursty: users ask questions, get results, then pause to interpret. Skills align with this rhythm.
 
-3. **Self-contained workflows** - Skills can include helper scripts, reference documentation, and setup instructions. Dex's complexity (DuckDB initialization, MCP server lifecycle, Field Notes schema) belongs in skill documentation, not Pi's core.
+3. **Natural language entry point** - Users invoke Dex through `/skill:dex` commands or by asking analytical questions that trigger the skill's description match. This feels like consulting a field companion, not running a tool.
 
-4. **No Pi modification required** - Skills are discovered automatically from `~/.pi/agent/skills/` or `.pi/skills/`. Dex can be developed, tested, and distributed independently of Pi releases.
+4. **Self-contained workflows** - Skills include helper scripts, reference documentation, and setup instructions. Dex's complexity (DuckDB initialization, Field Notes schema, Kitty rendering) belongs in skill documentation.
 
-5. **Complements MCP Apps** - Skills handle orchestration and user intent interpretation. MCP Apps handle structured output rendering. This separation keeps concerns clean: the skill decides _what_ analysis to run; the MCP App decides _how_ to present results.
+5. **CLI tools are language-agnostic** - Dex core is Python; Pi is TypeScript. CLI tools bridge them via stdin/stdout. No MCP, no extension TypeScript required.
 
-FastMCP MCP Apps are recommended for structured output because:
+6. **Kitty graphics work without MCP** - CLI tools emit Kitty escape sequences directly. No MCP Apps needed. Matplotlib backends (kitcat, matplotlib-backend-kitty) handle protocol details.
 
-1. **Interactive terminal UI** - MCP Apps (FastMCP v3.x) can render interactive components directly in the conversation, not just static text. This is critical for data exploration where users need to drill into tables, toggle chart views, or inspect field notes.
-
-2. **Kitty graphics protocol support** - MCP Apps can emit the escape sequences needed for inline chart rendering via Kitty's graphics protocol. This enables pixel-perfect plots without leaving the terminal.
-
-3. **Structured data preservation** - Unlike plain text, MCP Apps preserve data structure (types, relationships) that users may want to reference in follow-up queries or export to Field Notes.
-
-4. **Bidirectional communication** - MCP Apps can receive user input (filter selections, parameter adjustments) and update displays dynamically. This is essential for iterative analysis.
+7. **Zero Pi modification required** - Skills are discovered automatically from `~/.pi/agent/skills/` or `.pi/skills/`. Dex can be developed, tested, and distributed independently of Pi releases.
 
 ## Options Considered
 
@@ -65,8 +61,8 @@ FastMCP MCP Apps are recommended for structured output because:
 
 **How Dex would use it:**
 - `SKILL.md` describes when to invoke Dex (e.g., "Use when analyzing datasets, profiling data, or creating field notes")
-- Helper scripts initialize DuckDB, start the MCP server, and manage Field Notes
-- Reference docs cover DuckDB schema, MCP tool catalog, and Kitty rendering options
+- Helper scripts initialize DuckDB and manage Field Notes
+- Reference docs cover DuckDB schema, CLI tool catalog, and Kitty rendering options
 
 **Pros:**
 - No Pi code changes required
@@ -94,7 +90,7 @@ FastMCP MCP Apps are recommended for structured output because:
 - Good for repetitive analysis patterns
 
 **Cons:**
-- Static content only: cannot initialize DuckDB, start MCP servers, or run queries
+- Static content only: cannot initialize DuckDB, start CLI tools, or run queries
 - No dynamic behavior: cannot adapt to dataset schema or user context
 - Limited to prompt text: cannot produce structured output or render charts
 
@@ -130,7 +126,7 @@ FastMCP MCP Apps are recommended for structured output because:
 
 **How Dex would use it:**
 - Register tools for DuckDB queries, schema inspection, Field Notes management
-- Tools execute Python code via `pi.exec()` or call the MCP server
+- Tools execute Python code via `pi.exec()` or invoke CLI tools
 - Results rendered via custom renderers
 
 **Pros:**
@@ -143,31 +139,35 @@ FastMCP MCP Apps are recommended for structured output because:
 - Tool registration is TypeScript-only: no Python-native path
 - Each tool needs schema definition, error handling, rendering logic
 
-**Verdict:** **Recommended as a complement to skills** once an extension exists. For the initial milestone, MCP tools (via FastMCP) provide similar functionality without Pi extension complexity.
+**Verdict:** **Recommended as a complement to skills** for deeper Pi integration. For the initial milestone, CLI tools provide similar functionality without extension complexity.
 
-### 5. MCP Integration (Recommended for Structured Output)
+### 5. MCP Integration (Requires Pi Extension)
 
 **What it is:** Model Context Protocol (MCP) is a standard for exposing tools, resources, and prompts to LLMs. FastMCP is a Python framework for building MCP servers.
 
-**How Dex would use it:**
+**Critical constraint:** Per Pi's README: **"No MCP. Build CLI tools with READMEs (see Skills), or build an extension that adds MCP support."** Pi does NOT have built-in MCP client support.
+
+**How Dex could use it (future, with extension):**
+- Build a Pi extension that adds MCP client support
 - Run a FastMCP server exposing DuckDB query tools, Field Notes resources, and analysis prompts
-- Pi connects to the MCP server (via skill scripts or extension)
-- Structured results (tables, charts) returned via MCP Apps
+- The extension connects Pi to the MCP server
+- Structured results (tables, charts) returned via extension custom UI or Kitty escape sequences from CLI
 
 **Pros:**
 - Language-agnostic: Dex core is Python; Pi is TypeScript; MCP bridges them
-- FastMCP MCP Apps support interactive terminal UI and Kitty graphics
+- FastMCP has rich tooling and MCP Apps for interactive UI
 - Standard protocol: works with Claude Desktop, other MCP clients
 - Clean separation: DuckDB logic stays in Python MCP server
 
 **Cons:**
+- **Requires building a Pi extension first** (TypeScript development, Pi extension API knowledge)
 - Requires running a separate server process (stdio or HTTP transport)
-- MCP configuration needed in Pi settings or skill scripts
+- MCP configuration needed in Pi settings or extension code
 - Slightly higher latency than native Pi tools
 
-**Verdict:** **Recommended** for structured output and DuckDB tooling. MCP is the cleanest way to expose Python-based analytics to Pi without embedding a Python runtime in Pi.
+**Verdict:** **Not recommended for initial milestone.** MCP requires an extension that does not yet exist. The initial architecture uses Pi Skills + CLI tools (native path). MCP integration is a future evolution path if deeper Pi integration is needed.
 
-### 6. Combination Approach (Recommended)
+### 6. Combination Approach (Recommended for Initial Milestone)
 
 **Architecture:**
 ```
@@ -177,16 +177,18 @@ User asks analytical question in Pi TUI
 ┌─────────────────────────┐
 │  Pi Skill: /skill:dex   │  ← Orchestrates workflow
 │  - Interprets intent    │
-│  - Starts MCP server    │
-│  - Invokes MCP tools    │
+│  - Invokes CLI tools    │
+│  - CLI tools emit Kitty │
+│    escape sequences     │
 └───────────┬─────────────┘
             │
             ▼
 ┌─────────────────────────┐
-│  FastMCP MCP Server     │  ← Executes analysis
-│  - DuckDB tools         │
-│  - Field Notes tools    │
-│  - MCP Apps for output  │
+│  Dex CLI Tools (Python) │  ← Executes analysis
+│  - duckdb_runtime.py    │
+│  - field_notes.py       │
+│  - chart_render.py      │
+│  - All output to stdout │
 └───────────┬─────────────┘
             │
             ▼
@@ -198,11 +200,17 @@ User asks analytical question in Pi TUI
 └─────────────────────────┘
 ```
 
-**Why combine:**
+**Why this combination:**
 - Skills handle user intent and workflow orchestration (Pi-native)
-- MCP handles Python execution and structured output (language-agnostic)
+- CLI tools execute Python code and emit structured output (language-agnostic)
 - DuckDB stays in Python where its ecosystem lives
+- Kitty graphics work via escape sequences from CLI (no MCP needed)
 - Each layer can evolve independently
+
+**Future evolution path:** If deeper Pi integration is needed (custom tools, input interception, custom UI rendering), build a Pi extension that:
+- Registers custom Dex tools (`dex_query`, `dex_profile`)
+- Optionally adds MCP client support (if MCP is desired)
+- Uses `ctx.ui.custom()` for interactive displays
 
 ## Pi APIs, Extension Points, and Conventions
 
@@ -229,11 +237,12 @@ dex/
 ├── SKILL.md                 # Frontmatter + instructions
 ├── scripts/
 │   ├── init_duckdb.sh       # Initialize DuckDB and Field Notes schema
-│   ├── start_mcp_server.sh  # Launch FastMCP server
-│   └── query.sh             # Execute DuckDB query via MCP
+│   ├── profile_dataset.py   # CLI tool: profile a dataset
+│   ├── query_duckdb.py      # CLI tool: execute DuckDB query
+│   └── add_field_note.py    # CLI tool: append to Field Notes
 ├── references/
 │   ├── duckdb-schema.md     # Field Notes schema documentation
-│   └── mcp-tools.md         # Catalog of available MCP tools
+│   └── cli-tools.md         # Catalog of available CLI tools
 └── assets/
     └── field-notes-template.sql  # Initial Field Notes DDL
 ```
@@ -318,7 +327,7 @@ uv add duckdb
 ```
 
 **Runtime expectations:**
-- DuckDB runs embedded in the FastMCP server process
+- DuckDB runs embedded in CLI tool processes (invoked by skill scripts)
 - Field Notes database stored in `.dex/field_notes.duckdb` (repo-local by default)
 - Connections opened/closed per tool invocation (no long-lived connections unless `--keep-connection` flag)
 
@@ -376,34 +385,13 @@ CREATE INDEX field_notes_type_idx ON field_notes(note_type);
 CREATE INDEX field_notes_dataset_idx ON field_notes(dataset_path);
 ```
 
-## FastMCP MCP Apps for Structured Terminal Results
+## Kitty Graphics Protocol for Chart Rendering
 
-### FastMCP Overview
+### Kitty Graphics Protocol
 
-FastMCP is a Python framework for building MCP servers. Dex will use FastMCP v3.x to expose:
+Kitty supports inline image rendering via escape sequences. Dex CLI tools emit these escape sequences directly to render charts in the terminal.
 
-**Tools:**
-- `query(sql: str, format: str = "markdown")` - Execute DuckDB query
-- `profile_dataset(path: str)` - Profile a dataset (row count, schema, statistics)
-- `list_tables()` - List all tables in current DuckDB database
-- `describe_table(table: str)` - Get schema for a table
-- `add_field_note(content: str, note_type: str, dataset: Optional[str])` - Append to Field Notes
-- `list_field_notes(limit: int = 20, note_type: Optional[str])` - Query Field Notes
-
-**Resources:**
-- `field-notes://recent` - Recent Field Notes entries
-- `field-notes://dataset/{path}` - Notes associated with a specific dataset
-
-**Prompts:**
-- `analyze-dataset(dataset_path: str)` - Prompt template for dataset analysis workflow
-
-### MCP Apps for Kitty Terminal Rendering
-
-FastMCP MCP Apps can render structured output directly in Pi TUI running inside Kitty.
-
-**Kitty Graphics Protocol:**
-Kitty supports inline image rendering via escape sequences. Dex can use this for charts:
-
+**Example: Emit Kitty graphics protocol escape sequence from a CLI tool:**
 ```python
 # Example: Emit Kitty graphics protocol escape sequence
 def render_chart_inline(chart_bytes: bytes):
@@ -413,30 +401,36 @@ def render_chart_inline(chart_bytes: bytes):
     print(f"\033_Gf=100;{encoded}\033\\")
 ```
 
-**MCP App UI components:**
-- Tables with sorting/filtering
-- Charts rendered via Kitty graphics protocol
-- Field notes timeline with filtering by type
-- Analysis summaries with expandable sections
+**Matplotlib backends for Kitty:**
+- **kitcat** - Matplotlib backend for Kitty and iTerm2 graphics protocols (recommended)
+- **matplotlib-backend-kitty** - Matplotlib backend specifically for Kitty
 
-### Example Flow: Dataset Profile
+**Usage:**
+```python
+import matplotlib
+matplotlib.use('kitcat')  # or 'kitty' for matplotlib-backend-kitty
+import matplotlib.pyplot as plt
+
+# Create chart
+plt.plot([1, 2, 3, 4])
+plt.show()  # Renders inline via Kitty protocol
+```
+
+### Example Flow: Dataset Profile (CLI Tools Approach)
 
 ```
 User: /skill:dex profile sales.csv
 
 Dex Skill:
-1. Starts FastMCP MCP server (stdio transport)
-2. Invokes profile_dataset tool with path="sales.csv"
+1. Invokes profile_dataset.py CLI tool with path="sales.csv"
 
-FastMCP Server:
+CLI Tool (profile_dataset.py):
 1. Loads sales.csv into DuckDB
 2. Computes statistics (row count, column stats, null percentages)
-3. Generates summary table (Markdown format)
+3. Generates summary table (Markdown format to stdout)
 4. Creates bar chart of null percentages (PNG via matplotlib/kitcat)
-5. Emits MCP App response with:
-   - Structured table component
-   - Inline chart via Kitty graphics protocol
-   - Field Note entry: "Profiled sales.csv: 10K rows, 15 columns"
+5. Emits Kitty escape sequence for inline chart
+6. Adds Field Note entry: "Profiled sales.csv: 10K rows, 15 columns"
 
 Pi TUI displays:
 ┌─────────────────────────────────────┐
@@ -451,6 +445,7 @@ Pi TUI displays:
 └─────────────────────────────────────┘
 
 [Inline bar chart: null percentages by column]
+( Rendered via Kitty graphics protocol escape sequences )
 
 ✓ Field Note added: "Profiled sales.csv"
 ```
@@ -466,7 +461,7 @@ Pi TUI displays:
 - Read-only mode option
 - Configurable database path
 
-**Verdict:** **Too limited for Dex.** Single-tool design is intentional (LLMs can generate any SQL), but Dex needs higher-level tools (profiling, Field Notes, schema inspection) that wrap SQL. Dex should build its own FastMCP server rather than wrapping this one.
+**Verdict:** **Too limited for Dex.** Single-tool design is intentional (LLMs can generate any SQL), but Dex needs higher-level tools (profiling, Field Notes, schema inspection) that wrap SQL. Dex should build its own CLI tools rather than wrapping this one.
 
 ### duckdb_mcp (teaguesterling/duckdb_mcp)
 
@@ -478,20 +473,22 @@ Pi TUI displays:
 - Custom tool publishing: `mcp_publish_tool(name, description, sql_template, ...)`
 - Security framework: allowlists for commands and URLs
 
-**Verdict:** **Interesting but not the right fit.** This extension is designed for DuckDB-to-MCP integration (e.g., exposing DuckDB to Claude Desktop). Dex needs the inverse: Pi-to-DuckDB via MCP. The extension's complexity (security frameworks, multi-transport support) is overkill for Dex's local-first use case.
+**Verdict:** **Interesting but not the right fit.** This extension is designed for DuckDB-to-MCP integration (e.g., exposing DuckDB to Claude Desktop). Dex needs the inverse: Pi-to-DuckDB via CLI tools. The extension's complexity (security frameworks, multi-transport support) is overkill for Dex's local-first use case.
 
-### Dex's Approach
+### Dex's Approach (CLI Tools)
 
-Dex will build a **custom FastMCP server** in Python that:
-- Wraps DuckDB Python package (not the duckdb_mcp extension)
-- Exposes high-level tools (profiling, Field Notes, schema inspection)
-- Uses MCP Apps for structured output
-- Runs locally via stdio transport (no network exposure)
+Dex will build **Python CLI tools** that:
+- Wrap DuckDB Python package (not the duckdb_mcp extension)
+- Expose high-level operations (profiling, Field Notes, schema inspection) via CLI commands
+- Emit Kitty graphics protocol escape sequences for inline chart rendering
+- Run as subprocesses invoked by the Pi skill scripts
+- Output structured text (Markdown tables, summaries) to stdout
 
 **Risks:**
-- **MCP tool discovery:** Dex controls tool registration, so no security risk from unknown tools
 - **Local data access:** DuckDB runs locally with user's permissions; no sandboxing beyond user's own account
 - **Connector credentials:** External database connectors (Postgres, etc.) require credentials; these should be managed via environment variables or DuckDB secrets, not stored in Field Notes
+
+**Future evolution (with Pi extension):** If deeper integration is needed, Dex could build a Pi extension that adds MCP client support and runs a FastMCP server. This is not part of the initial milestone.
 
 ## Validation and Gates
 
@@ -535,7 +532,7 @@ For this research-only bead, validation is:
 2. **Implementation beads** - Create small, independently reviewable beads for:
    - Initial Python package structure (`pyproject.toml`, `src/dex/`)
    - DuckDB-backed Field Notes prototype
-   - Minimal FastMCP server with profile_dataset tool
+   - Minimal CLI tools (profile_dataset.py, query_duckdb.py)
    - Pi skill for Dex orchestration
    - Example end-to-end flow with public dataset
-3. **Documentation** - Expand `docs/tooling-research.md` with detailed MCP Apps and Kitty rendering research
+3. **Documentation** - Expand `docs/tooling-research.md` with detailed CLI tools and Kitty rendering research

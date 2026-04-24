@@ -1,6 +1,6 @@
 # Dex Tooling Research
 
-This document summarizes research on tooling options for Dex: DuckDB skills, FastMCP MCP Apps, DuckDB MCP tooling, and Kitty-compatible chart/graph rendering.
+This document summarizes research on tooling options for Dex: DuckDB skills, CLI tools for structured output, DuckDB MCP tooling (future consideration), and Kitty-compatible chart/graph rendering.
 
 ## 1. DuckDB Skills
 
@@ -26,94 +26,78 @@ This document summarizes research on tooling options for Dex: DuckDB skills, Fas
 
 ---
 
-## 2. FastMCP MCP Apps
+## 2. CLI Tools for Structured Output
 
-### FastMCP Overview
+### Clarification: Pi Does Not Have Built-in MCP Support
 
-**FastMCP** is a Python framework for building MCP (Model Context Protocol) servers and clients. It is the most popular MCP framework, powering ~70% of MCP servers across all languages.
+Per Pi's README: **"No MCP. Build CLI tools with READMEs (see Skills), or build an extension that adds MCP support."**
 
-**Current version:** FastMCP 3.2.x (as of April 2026)
+**This means:**
+- Pi does NOT have built-in MCP client support
+- Dex cannot use FastMCP MCP Apps directly without building a Pi extension first
+- The initial architecture uses **CLI tools** invoked by Pi skills (the native path)
+- MCP integration is a future evolution path requiring a Pi extension
 
-**Key capabilities:**
-- **Servers:** Expose tools, resources, and prompts to LLMs
-- **Apps:** Render interactive UI components directly in the conversation (critical for Dex)
-- **Clients:** Connect to any MCP server (local or remote)
+### CLI Tools Approach
 
-### MCP Apps for Structured Terminal Output
+Dex will build Python CLI tools that:
+- Execute DuckDB queries and profiling operations
+- Emit structured text output (Markdown tables, summaries)
+- Emit **Kitty graphics protocol** escape sequences for inline charts
+- Are invoked by Pi skill scripts via subprocess
 
-**What are MCP Apps?** MCP Apps are a FastMCP feature that enables interactive UI components rendered directly in the MCP client's conversation. For Dex running in Pi TUI, this means:
-
-- Tables with sorting/filtering
-- Charts and graphs (via Kitty graphics protocol)
-- Result cards and summaries
-- Analysis plans and provenance summaries
-- Field note timelines
-
-**FastMCP server example:**
+**CLI tool example:**
 ```python
-from fastmcp import FastMCP
+#!/usr/bin/env python3
+# profile_dataset.py
+import sys
+import duckdb
+import matplotlib
+matplotlib.use('kitcat')
+import matplotlib.pyplot as plt
+import base64
+import io
 
-mcp = FastMCP(
-    name="Dex",
-    instructions="Data analyst companion for profiling datasets, running analytical queries, and maintaining field notes.",
-    version="0.1.0"
-)
-
-@mcp.tool
-def profile_dataset(path: str) -> dict:
-    """Profile a dataset and return summary statistics."""
-    # DuckDB logic here
-    return {
-        "row_count": 10234,
-        "column_count": 15,
-        "columns": [...],
-        "statistics": {...}
-    }
-
-@mcp.tool
-def query(sql: str, format: str = "markdown") -> str:
-    """Execute a DuckDB query and return results."""
-    # DuckDB execution here
-    return results
+def profile_dataset(path: str):
+    # Load dataset into DuckDB
+    conn = duckdb.connect()
+    conn.execute(f"CREATE TABLE data AS SELECT * FROM read_csv_auto('{path}')")
+    
+    # Compute statistics
+    row_count = conn.execute("SELECT COUNT(*) FROM data").fetchone()[0]
+    
+    # Generate summary table (Markdown)
+    print(f"## Dataset: {path}")
+    print(f"Rows: {row_count}")
+    
+    # Generate chart and emit Kitty escape sequence
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    chart_bytes = buf.getvalue()
+    encoded = base64.b64encode(chart_bytes).decode('ascii')
+    kitty_escape = f"\033_Gf=100;{encoded}\033\\"
+    print(kitty_escape)
 
 if __name__ == "__main__":
-    mcp.run()  # Auto-detects stdio vs HTTP based on environment
+    if len(sys.argv) < 2:
+        print("Usage: profile_dataset.py <path>", file=sys.stderr)
+        sys.exit(1)
+    profile_dataset(sys.argv[1])
 ```
 
-### FastMCP Client Integration
+### Kitty Graphics Protocol for CLI Tools
 
-Pi can connect to FastMCP servers via:
-- **stdio transport:** For local servers (recommended for Dex)
-- **HTTP transport:** For remote servers (future consideration)
+CLI tools emit Kitty escape sequences directly to stdout. Pi TUI running in Kitty renders these inline.
 
-**Pi configuration (future):**
-```json
-{
-  "mcpServers": {
-    "dex": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/dex", "run", "dex-mcp"]
-    }
-  }
-}
-```
-
-Alternatively, Dex's Pi skill can start the MCP server as a subprocess and manage its lifecycle.
-
-### MCP Apps and Kitty Terminal
-
-FastMCP MCP Apps can emit terminal escape sequences, including the **Kitty graphics protocol** for inline images. This is critical for rendering charts without leaving the terminal.
-
-**Example: Emitting a chart via Kitty graphics protocol:**
+**Example: Emitting a chart via Kitty graphics protocol from CLI:**
 ```python
 import base64
-from fastmcp import FastMCP
+import io
+import matplotlib
+matplotlib.use('kitcat')
+import matplotlib.pyplot as plt
 
-mcp = FastMCP("Dex")
-
-@mcp.tool
-def plot_null_percentages(table_name: str) -> str:
-    """Generate a bar chart of null percentages and display inline."""
+def emit_chart_inline():
     # Generate chart with matplotlib
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
@@ -122,32 +106,23 @@ def plot_null_percentages(table_name: str) -> str:
     # Base64-encode and emit Kitty escape sequence
     encoded = base64.b64encode(chart_bytes).decode('ascii')
     kitty_escape = f"\033_Gf=100;{encoded}\033\\"
-    
-    return f"Null percentages for {table_name}:\n\n{kitty_escape}"
+    print(kitty_escape)
 ```
 
-**FastMCP v3.x features relevant to Dex:**
-- **Tag-based filtering:** Categorize tools (e.g., `tags={"profiling", "field-notes"}`)
-- **Custom routes:** Add health checks or status endpoints when running in HTTP mode
-- **Authentication:** Secure HTTP endpoints with bearer tokens or OAuth (future consideration)
-- **Background tasks:** Run long analyses asynchronously while user continues working
+### CLI Tool Installation
 
-### FastMCP Installation
+CLI tools are Python scripts in the Dex package, invoked via `uv run`:
 
 ```bash
-uv add fastmcp
+uv run dex-profile dataset.csv
+uv run dex-query "SELECT * FROM data"
 ```
 
-**Dependencies (FastMCP 3.2.x):**
-- `mcp` (MCP Python SDK)
-- `pydantic` (parameter validation)
-- `httpx` (HTTP transport)
-- `uvicorn` (HTTP server)
-- `rich` (terminal formatting)
+The Pi skill scripts invoke these tools as subprocesses.
 
 ---
 
-## 3. DuckDB MCP Tooling
+## 3. DuckDB MCP Tooling (Future Consideration)
 
 ### mcp-server-duckdb (ktanaka101)
 
@@ -161,30 +136,13 @@ uv add fastmcp
 - Configurable database path (`--db-path`)
 - Connection reuse option (`--keep-connection`)
 
-**Installation:**
-```bash
-uvx mcp-server-duckdb --db-path ~/data.duckdb
-```
-
-**Claude Desktop configuration:**
-```json
-{
-  "mcpServers": {
-    "duckdb": {
-      "command": "uvx",
-      "args": ["mcp-server-duckdb", "--db-path", "~/data.duckdb"]
-    }
-  }
-}
-```
-
 **Verdict for Dex:** **Too limited.** The single-tool design is intentional (LLMs can generate any SQL), but Dex needs higher-level abstractions:
 - Dataset profiling (not just raw SQL)
 - Field Notes management (append-only activity log)
 - Schema inspection and discovery
 - Structured output formatting (tables, charts, not just text)
 
-**Recommendation:** Do not depend on `mcp-server-duckdb`. Build Dex's own FastMCP server with domain-specific tools.
+**Recommendation:** Do not depend on `mcp-server-duckdb`. Build Dex's own CLI tools with domain-specific operations.
 
 ### duckdb_mcp Extension (teaguesterling)
 
@@ -192,50 +150,24 @@ uvx mcp-server-duckdb --db-path ~/data.duckdb
 
 **Description:** A DuckDB extension (C++) that provides MCP client and server capabilities from within DuckDB SQL.
 
-**Capabilities:**
-
-**Client mode:**
-- Attach MCP servers: `ATTACH 'python3' AS server (TYPE mcp, ARGS '["path/to/server.py"]')`
-- Query remote resources: `SELECT * FROM read_csv('mcp://server/file:///data.csv')`
-- Execute remote tools: `SELECT mcp_call_tool('server', 'analyze', '{"dataset": "sales"}')`
-
-**Server mode:**
-- Start MCP server: `PRAGMA mcp_server_start('stdio')`
-- Publish tables as resources: `SELECT mcp_publish_table('products', 'data://tables/products', 'json')`
-- Publish custom tools: `PRAGMA mcp_publish_tool('search_products', 'Search products', 'SELECT * FROM products WHERE ...', '{...}', '["query"]')`
-
-**Security framework:**
-- `allowed_mcp_commands` - Allowlist for executable paths
-- `allowed_mcp_urls` - Allowlist for URL prefixes
-- `mcp_lock_servers` - Lock configuration to prevent runtime changes
-
 **Verdict for Dex:** **Interesting but not the right fit.** This extension is designed for:
 - Exposing DuckDB to external MCP clients (e.g., Claude Desktop)
 - Querying external MCP resources from within DuckDB SQL
 
-Dex needs the inverse: **Pi-to-DuckDB via MCP**, with high-level analysis tools. The extension's complexity (security frameworks, multi-transport support, C++ build requirements) is overkill for Dex's local-first use case.
+Dex needs the inverse: **Pi-to-DuckDB via CLI tools**, with high-level analysis tools. The extension's complexity (security frameworks, multi-transport support, C++ build requirements) is overkill for Dex's local-first use case.
 
-**Recommendation:** Do not depend on `duckdb_mcp` extension. Use DuckDB Python package directly in a FastMCP server.
+**Recommendation:** Do not depend on `duckdb_mcp` extension. Use DuckDB Python package directly in CLI tools.
 
-### Dex's MCP Tooling Strategy
+### Future: FastMCP with Pi Extension
 
-Dex will build a **custom FastMCP server** with these tools:
+If Dex evolves to require MCP integration:
 
-| Tool | Description |
-|------|-------------|
-| `profile_dataset(path: str)` | Profile a dataset (row count, schema, statistics, null percentages) |
-| `query(sql: str, format: str)` | Execute DuckDB query with formatted output (table, markdown, chart) |
-| `list_tables()` | List all tables in current DuckDB database |
-| `describe_table(table: str)` | Get schema for a specific table |
-| `add_field_note(content: str, note_type: str, dataset: Optional[str])` | Append to Field Notes |
-| `list_field_notes(limit: int, note_type: Optional[str])` | Query Field Notes |
-| `export_results(query: str, path: str, format: str)` | Export query results to file |
+1. Build a Pi extension that adds MCP client support
+2. Run a FastMCP server exposing DuckDB tools
+3. Extension connects Pi to MCP server
+4. MCP Apps could provide interactive UI components
 
-**Rationale:**
-- Higher-level than raw SQL: `profile_dataset` abstracts the profiling logic
-- Structured output: Tools return typed data, not just text
-- Field Notes integration: Dedicated tools for activity logging
-- Extensible: New tools can be added without changing the core architecture
+**This is NOT part of the initial milestone.** The initial architecture uses CLI tools.
 
 ---
 
@@ -269,48 +201,6 @@ printf '\033_Gf=100;%s\033\\' "$encoded"
 
 ### Python Libraries for Kitty Graphics
 
-#### term-image
-**Repository:** https://github.com/AnonymouX47/term-image
-
-**Description:** Python library and CLI for displaying images in the terminal using Kitty graphics protocol.
-
-**Features:**
-- Display images inline
-- Browse image directories
-- Resize and crop
-- Works over SSH
-
-**Verdict:** Good for displaying pre-generated images. Dex may use this for exporting charts, but needs inline generation.
-
-#### pixcat
-**Repository:** https://github.com/xyproto/pixcat
-
-**Description:** CLI and Python library wrapping the Kitty graphics protocol.
-
-**Features:**
-- Simple API for displaying images
-- Supports multiple transmission modes
-- Works with PIL/Pillow images
-
-**Verdict:** Lightweight option for Dex to emit charts.
-
-#### matplotlib-backend-kitty
-**Repository:** https://github.com/jktr/matplotlib-backend-kitty
-
-**Description:** Matplotlib backend for direct plotting in Kitty terminal.
-
-**Usage:**
-```python
-import matplotlib
-matplotlib.use('kitty')
-import matplotlib.pyplot as plt
-
-plt.plot([1, 2, 3, 4])
-plt.show()  # Displays inline via Kitty protocol
-```
-
-**Verdict:** **Strong candidate** for Dex chart generation. Matplotlib is mature, widely used, and the backend handles Kitty protocol details.
-
 #### kitcat
 **Repository:** https://github.com/mil-ad/kitcat
 
@@ -331,45 +221,63 @@ plt.plot([1, 2, 3, 4])
 plt.show()
 ```
 
-**Verdict:** **Strong candidate** for Dex. Broader terminal support than matplotlib-backend-kitty.
+**Verdict:** **Recommended for Dex.** Broader terminal support than matplotlib-backend-kitty.
 
-#### termplt
-**Repository:** https://github.com/EdCarney/termplt
+#### matplotlib-backend-kitty
+**Repository:** https://github.com/jktr/matplotlib-backend-kitty
 
-**Description:** Rust library for rendering 2D plots directly in Kitty-compatible terminals.
+**Description:** Matplotlib backend for direct plotting in Kitty terminal.
 
-**Features:**
-- Generic numeric types (i32, f32, f64, etc.)
-- Multiple series overlay
-- Marker styles (circles, squares)
-- Line drawing
-- Axes and grid lines
-- Bitmap text for labels
+**Usage:**
+```python
+import matplotlib
+matplotlib.use('kitty')
+import matplotlib.pyplot as plt
 
-**CLI usage:**
-```bash
-termplt --data "(1,1),(2,4),(3,9),(4,16)"
+plt.plot([1, 2, 3, 4])
+plt.show()  # Displays inline via Kitty protocol
 ```
 
-**Verdict:** Interesting but adds Rust dependency to a Python project. Matplotlib backends are simpler for Dex.
+**Verdict:** **Strong candidate** for Dex chart generation. Matplotlib is mature, widely used, and the backend handles Kitty protocol details.
+
+#### pixcat
+**Repository:** https://github.com/xyproto/pixcat
+
+**Description:** CLI and Python library wrapping the Kitty graphics protocol.
+
+**Features:**
+- Simple API for displaying images
+- Supports multiple transmission modes
+- Works with PIL/Pillow images
+
+**Verdict:** Lightweight option for Dex to emit charts.
+
+#### term-image
+**Repository:** https://github.com/AnonymouX47/term-image
+
+**Description:** Python library and CLI for displaying images in the terminal using Kitty graphics protocol.
+
+**Verdict:** Good for displaying pre-generated images. Dex may use this for exporting charts, but needs inline generation.
 
 ### Recommended Approach for Dex
 
-**Primary:** Use **kitcat** or **matplotlib-backend-kitty** for chart generation.
+**Primary:** Use **kitcat** for chart generation.
 
 **Rationale:**
 - Matplotlib is mature and well-documented
 - Backend handles Kitty protocol escape sequences
 - Supports all common chart types (bar, line, scatter, histogram, etc.)
 - Easy to integrate with DuckDB query results
+- Broader terminal compatibility than matplotlib-backend-kitty
 
-**Example Dex chart generation:**
+**Example Dex chart generation in CLI tool:**
 ```python
 import matplotlib
 matplotlib.use('kitcat')
 import matplotlib.pyplot as plt
 import duckdb
 import io
+import base64
 
 def plot_null_percentages(table_name: str) -> str:
     # Query DuckDB for null percentages
@@ -392,18 +300,16 @@ def plot_null_percentages(table_name: str) -> str:
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
     
-    # Render to buffer
+    # Render to buffer and emit via Kitty protocol
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
     buf.seek(0)
-    
-    # Emit via Kitty protocol (kitcat handles this)
-    plt.show()
+    encoded = base64.b64encode(buf.getvalue()).decode('ascii')
+    kitty_escape = f"\033_Gf=100;{encoded}\033\\"
+    print(kitty_escape)
     
     return f"Chart displayed for {table_name}"
 ```
-
-**Fallback:** If kitcat/matplotlib-backend-kitty have issues, use **pixcat** or direct escape sequence emission.
 
 ### Terminal Compatibility
 
@@ -498,10 +404,9 @@ CREATE INDEX field_notes_dataset_idx ON field_notes(dataset_path);
 **Dex skill workflow:**
 1. Parse arguments: `path="sales.csv"`, `action="profile"`
 2. Initialize DuckDB (create `.dex/field_notes.duckdb` if needed)
-3. Start FastMCP server (stdio transport)
-4. Invoke `profile_dataset` tool via MCP
+3. Invoke `profile_dataset.py` CLI tool
 
-**FastMCP server execution:**
+**CLI tool execution:**
 1. Load `sales.csv` into DuckDB
 2. Compute statistics:
    - Row count: 10,234
@@ -509,8 +414,8 @@ CREATE INDEX field_notes_dataset_idx ON field_notes(dataset_path);
    - Column types and null percentages
    - Numeric column statistics (min, max, mean, stddev)
 3. Generate structured output:
-   - Markdown table for schema
-   - Bar chart for null percentages (via kitcat/Kitty protocol)
+   - Markdown table for schema (stdout)
+   - Bar chart for null percentages (Kitty escape sequence to stdout)
 4. Add Field Note: "Profiled sales.csv: 10K rows, 15 columns"
 
 **Pi TUI display:**
@@ -529,7 +434,7 @@ CREATE INDEX field_notes_dataset_idx ON field_notes(dataset_path);
 └─────────────────────────────────────┘
 
 [Inline bar chart: null percentages by column]
-( Rendered via Kitty graphics protocol )
+( Rendered via Kitty graphics protocol escape sequences )
 
 ✓ Field Note added: "Profiled sales.csv at 2026-04-24T14:30:00Z"
 ```
@@ -562,22 +467,33 @@ CREATE INDEX field_notes_dataset_idx ON field_notes(dataset_path);
 | Component | Recommendation | Rationale |
 |-----------|---------------|-----------|
 | **Pi Integration** | Pi Skill | No Pi modification required, progressive disclosure, standard-compliant |
-| **MCP Framework** | FastMCP 3.x | Python-native, MCP Apps for structured output, Kitty graphics support |
+| **Structured Output** | CLI Tools + Kitty | Native Pi path, no extension required, Kitty escape sequences work directly |
 | **DuckDB** | DuckDB Python package | Direct control, no C++ extension complexity |
 | **Chart Rendering** | kitcat (matplotlib backend) | Mature, Kitty protocol support, works over SSH |
 | **Field Notes Storage** | Repo-local `.dex/` | Project-specific, easy to archive, clear ownership |
 
-### Do Not Depend On
+### Do Not Depend On (Initial Milestone)
 
 - **mcp-server-duckdb** - Too limited (single `query` tool)
 - **duckdb_mcp extension** - Wrong direction (DuckDB-to-MCP, not Pi-to-DuckDB)
+- **FastMCP MCP Apps** - Requires Pi extension (not built yet)
 - **Official DuckDB skill** - Does not exist; Dex will define its own patterns
+
+### Future Evolution Path
+
+If deeper Pi integration is needed:
+1. Build a Pi extension that adds MCP client support
+2. Run FastMCP server for DuckDB tooling
+3. Extension connects Pi to MCP server
+4. MCP Apps could provide interactive UI components
+
+**This is NOT part of the initial milestone.**
 
 ### Next Steps
 
 1. **Human approval** - Review this research and `docs/architecture.md`
 2. **Package structure** - Create `src/dex/` with `pyproject.toml`
 3. **Field Notes prototype** - Implement DuckDB schema and append-only behavior
-4. **FastMCP server** - Build minimal server with `profile_dataset` tool
+4. **CLI tools** - Build minimal tools (`profile_dataset.py`, `query_duckdb.py`)
 5. **Pi skill** - Create `SKILL.md` with orchestration scripts
 6. **End-to-end example** - Test with public dataset (e.g., NYC taxi data, Kaggle sample)
