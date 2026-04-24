@@ -315,6 +315,28 @@ Dex uses DuckDB for:
 - **Intermediate tables** - Transformations and derived datasets
 - **Field Notes storage** - Append-only activity log in DuckDB tables
 
+### Transient vs. Durable Data
+
+Dex distinguishes between transient analysis data and durable project artifacts:
+
+**Transient analysis data** (not persisted):
+- In-memory DuckDB sessions for exploratory queries
+- Temporary tables created during analysis sessions (e.g., `CREATE TEMP TABLE intermediate_results AS ...`)
+- Scratch work, intermediate transformations, and working datasets
+- Session state that is discarded when the CLI tool exits
+
+**Durable project artifacts** (persisted to `.dex/`):
+- Field Notes database (`.dex/field_notes.duckdb`) - append-only activity log
+- Generated outputs (`.dex/artifacts/`) - charts, exported query results, profiling summaries
+- Cached schema profiles (`.dex/cache/`) - reusable metadata for known datasets
+- Analysis traces and provenance records
+
+**Default behavior:**
+- CLI tools run in ephemeral DuckDB sessions unless explicitly configured otherwise
+- Only Field Notes and user-requested artifacts are persisted by default
+- Transient data is lost when the tool exits; users must explicitly save results to artifacts
+- Field Notes capture metadata about transient operations (e.g., "Queried sales by region at 2026-04-24T14:30:00Z") without storing the full intermediate data
+
 ### DuckDB Python Package
 
 Dex depends on:
