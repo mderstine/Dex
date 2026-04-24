@@ -56,17 +56,30 @@ Relevant Pi APIs for Dex:
 
 ### FastMCP MCP Apps facts
 
-FastMCP Apps docs describe MCP Apps as interactive UIs returned by MCP tools. Current documented concepts include:
+Source-backed current-release notes:
+
+- GitHub release `PrefectHQ/fastmcp` `v3.2.0: Show Don't Tool`, published `2026-03-30T20:25:20Z`, states: "FastMCP 3.2 is the Apps release" and that tools can return interactive UIs — charts, dashboards, forms, maps — rendered inside the conversation.
+- That same `v3.2.0` release identifies `FastMCPApp` as a new provider class for interactive MCP applications, separating model-visible entry points (`@app.ui()`) from UI-callable backend tools (`@app.tool()`), and says FastMCP handles MCP Apps protocol machinery: renderer resources, CSP configuration, and structured content serialization.
+- The current FastMCP releases page marks `v3.2.4: Patch Me If You Can` as latest, published around `2026-04-14`, so implementation should pin and verify the exact installed `fastmcp` version before coding.
+- FastMCP App Architecture docs state the pipeline exactly: `Python components -> JSON tree -> structuredContent -> Renderer iframe -> Host UI`.
+- FastMCP App Architecture docs state that `app=True` expands into `AppConfig`, sets `meta["ui"]`, links the tool to a `resourceUri`, and triggers registration of the shared Prefab renderer resource.
+- FastMCP App Architecture docs identify the shared renderer URI as `ui://prefab/renderer.html` with MIME type `text/html;profile=mcp-app`.
+- FastMCP App Architecture docs state that the renderer is a sandboxed iframe using `postMessage` and the `@modelcontextprotocol/ext-apps` AppBridge for host communication.
+- FastMCP Prefab UI docs state that the simplest use is `@mcp.tool(app=True)` returning `PrefabApp` or Prefab components, with examples using `PrefabApp`, `Column`, `Heading`, `BarChart`, and `ChartSeries`.
+- FastMCP Prefab UI docs state that `PrefabAppConfig()` with no arguments is equivalent to `app=True`, auto-sets the renderer URI, and merges renderer CSP with user CSP.
+- FastMCP Python SDK docs mark `fastmcp.server.apps` as deprecated in `3.2.0` and say to import from `fastmcp.apps` instead.
+
+Therefore, current documented concepts include:
 
 - `@mcp.tool(app=True)` for app-returning tools.
 - `PrefabApp` for declaring a UI in Python.
 - Prefab UI components such as `Column`, `Heading`, `BarChart`, `ChartSeries`, tables, forms, and stateful/reactive components.
 - `FastMCPApp` for managed UI/backend tool binding.
-- `AppConfig` / `PrefabAppConfig` for MCP Apps metadata.
+- `AppConfig` / `PrefabAppConfig` from `fastmcp.apps` for MCP Apps metadata.
 - `ui://prefab/renderer.html` as the shared Prefab renderer resource.
 - `structuredContent` as the serialized component tree sent to the host.
 - MCP Apps host behavior normally expects a sandboxed iframe renderer and a `postMessage` / AppBridge path.
-- `fastmcp dev apps` can preview app tools locally without a production host.
+- `fastmcp dev apps` can preview app tools locally without a production host and includes an MCP message inspector in the Apps release line.
 
 Important implication for Pi:
 
